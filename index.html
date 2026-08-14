@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbeitsstunden</title>
+    <meta
+      name="description"
+      content="Mobile Arbeitsstundenverwaltung für Minijob mit Export/Import für OneDrive oder GitHub Pages."
+    />
+    <meta name="theme-color" content="#3563e9" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%233563e9'/%3E%3Cpath d='M48 54h96v24H48zm0 30h96v24H48zm0 30h72v24H48z' fill='white'/%3E%3Ccircle cx='144' cy='138' r='18' fill='%2325b18a'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Minijob</p>
+          <h1>Arbeitsstunden</h1>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel form-panel">
+          <h2>Neuen Eintrag erfassen</h2>
+
+          <form id="hours-form">
+            <div class="field-group">
+              <label for="date">Datum</label>
+              <input id="date" name="date" type="date" required />
+            </div>
+
+            <div class="two-col">
+              <div class="field-group">
+                <label for="start">Angefangen</label>
+                <input id="start" name="start" type="time" required />
+              </div>
+
+              <div class="field-group">
+                <label for="end">Aufgehört</label>
+                <input id="end" name="end" type="time" required />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="break">Pause in Minuten</label>
+              <input id="break" name="break" type="number" min="0" max="180" value="0" />
+            </div>
+
+            <div class="field-group">
+              <label for="task">Tätigkeit</label>
+              <input
+                id="task"
+                name="task"
+                type="text"
+                maxlength="120"
+                placeholder="z. B. Schuleinführung, Technik, Aufbau"
+              />
+            </div>
+
+            <div class="field-group">
+              <label for="hourly-rate">Stundenlohn</label>
+              <input id="hourly-rate" name="hourly-rate" type="number" min="0" step="0.01" value="13.90" />
+            </div>
+
+            <button type="submit" class="primary-btn">Eintrag speichern</button>
+          </form>
+        </section>
+
+        <section class="panel summary-panel">
+          <h2>Übersicht</h2>
+          <div class="stats">
+            <div class="stat-card">
+              <span>Diese Woche</span>
+              <strong id="week-hours">0,00h</strong>
+            </div>
+            <div class="stat-card">
+              <span>Diesen Monat</span>
+              <strong id="month-hours">0,00h</strong>
+            </div>
+            <div class="stat-card">
+              <span>Gesamt</span>
+              <strong id="total-hours">0,00h</strong>
+            </div>
+          </div>
+
+          <div class="sync-actions">
+            <button id="export-btn" class="secondary-btn" type="button">CSV exportieren</button>
+            <label class="secondary-btn file-label" for="import-file">
+              CSV importieren
+            </label>
+            <input id="import-file" type="file" accept=".csv,text/csv" hidden />
+          </div>
+
+          <div class="helper-box">
+            <strong>So funktioniert die Synchronisierung:</strong>
+            <p>
+              Die App speichert Einträge lokal im Browser. Du kannst sie als CSV exportieren und in
+              OneDrive, Dropbox oder GitHub sichern. Dadurch bleibt die Datei überall verfügbar und
+              lässt sich leicht wieder importieren.
+            </p>
+          </div>
+        </section>
+
+        <section class="panel list-panel">
+          <div class="list-header">
+            <h2>Einträge</h2>
+            <select id="filter-month" aria-label="Monat filtern"></select>
+          </div>
+
+          <div id="entries-list" class="entries-list" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="entry-template">
+      <article class="entry-item">
+        <div class="entry-main">
+          <div class="entry-date"></div>
+          <div class="entry-times"></div>
+          <div class="entry-task"></div>
+        </div>
+        <div class="entry-meta">
+          <span class="entry-hours"></span>
+          <span class="entry-pay"></span>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
