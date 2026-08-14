@@ -11,6 +11,7 @@ const DEFAULT_ENTRIES = [
     breakMinutes: 30,
     task: 'Beispiel: Minijob',
     hourlyRate: 13.9,
+    paid: false,
   },
 ];
 
@@ -75,6 +76,7 @@ form.addEventListener('submit', async (event) => {
     breakMinutes,
     task,
     hourlyRate: Number.isFinite(hourlyRate) ? hourlyRate : 0,
+    paid: false,
   };
 
   try {
@@ -408,25 +410,80 @@ function renderSummary() {
   const monthHours = formatHours(getMinutesForMonth(thisMonth));
   const totalHours = formatHours(totalMinutes);
 
+  const weekPay = getCurrentWeekPay();
+  const monthPay = getMonthPay(thisMonth);
+  const totalPay = getTotalPay();
+
   document.querySelector('#week-hours').textContent = weekHours;
   document.querySelector('#month-hours').textContent = monthHours;
   document.querySelector('#total-hours').textContent = totalHours;
+
+  document.querySelector('#week-pay').textContent = formatMoney(weekPay);
+  document.querySelector('#month-pay').textContent = formatMoney(monthPay);
+  document.querySelector('#total-pay').textContent = formatMoney(totalPay);
 }
 
 function renderCharts() {
+  const container = document.querySelector('#statistics-tab-panel');
+  if (!container) return;
+
   const months = getRecentMonthKeys(6);
-  const timeValues = months.map((monthKey) => ({
+  const timeData = months.map((monthKey) => ({
+    month: monthKey,
     label: formatShortMonth(monthKey),
-    value: getMinutesForMonth(monthKey) / 60,
+    minutes: getMinutesForMonth(monthKey),
+  }));
+  const payData = months.map((monthKey) => ({
+    month: monthKey,
+    label: formatShortMonth(monthKey),
+    pay: getMonthPay(monthKey),
   }));
 
-  const payValues = months.map((monthKey) => ({
-    label: formatShortMonth(monthKey),
-    value: getTotalPayForMonth(monthKey),
-  }));
+  // Find best and worst months
+  const bestWorkMonth = timeData.reduce((best, current) => 
+    current.minutes > best.minutes ? current : best, timeData[0] || {});
+  const worstWorkMonth = timeData.reduce((worst, current) => 
+    current.minutes < worst.minutes ? current : worst, timeData[0] || {});
+  const bestPayMonth = payData.reduce((best, current) => 
+    current.pay > best.pay ? current : best, payData[0] || {});
+  const lowestPayMonth = payData.reduce((lowest, current) => 
+    current.pay < lowest.pay ? current : lowest, payData[0] || {});
 
-  renderBarChart('time-chart', timeValues, (value) => `${value.toFixed(1)}h`);
-  renderBarChart('pay-chart', payValues, (value) => `${value.toFixed(2)}€`);
+  // Get existing chart container or create new one
+  let chartLayout = container.querySelector('.chart-layout');
+  if (!chartLayout) {
+    chartLayout = document.createElement('div');
+    chartLayout.className = 'chart-layout';
+    const listHeader = container.querySelector('.list-header');
+    if (listHeader) {
+      listHeader.parentNode.insertBefore(chartLayout, listHeader.nextSibling);
+    } else {
+      container.appendChild(chartLayout);
+    }
+  }
+
+  chartLayout.innerHTML = `
+    <div class="chart-card">
+      <h3>Arbeitszeit Übersicht</h3>
+      <div id="time-chart" class="line-chart" aria-label="Arbeitszeit pro Monat"></div>
+      <div class="chart-stats">
+        <p>💪 Meiste Arbeit: ${bestWorkMonth.label || 'Keine Daten'} (${formatHours(bestWorkMonth.minutes || 0)})</p>
+        <p>📉 Wenigste Arbeit: ${worstWorkMonth.label || 'Keine Daten'} (${formatHours(worstWorkMonth.minutes || 0)})</p>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h3>Lohn Übersicht</h3>
+      <div id="pay-chart" class="line-chart" aria-label="Lohn pro Monat"></div>
+      <div class="chart-stats">
+        <p>💰 Höchster Lohn: ${bestPayMonth.label || 'Keine Daten'} (${formatMoney(bestPayMonth.pay || 0)})</p>
+        <p>📊 Niedrigster Lohn: ${lowestPayMonth.label || 'Keine Daten'} (${formatMoney(lowestPayMonth.pay || 0)})</p>
+      </div>
+    </div>
+  `;
+
+  renderLineChart('time-chart', timeData, (value) => formatHours(value));
+  renderLineChart('pay-chart', payData.map(d => ({ ...d, value: d.pay })), (value) => formatMoney(value));
 }
 
 function renderEntries() {
@@ -450,53 +507,181 @@ function renderEntries() {
     const pay = calculateEntryPay(entry, minutes);
     const startTime = normalizeTimeValue(entry.start);
     const endTime = normalizeTimeValue(entry.end);
+    const paidCheckbox = fragment.querySelector('.paid-toggle');
 
     item.dataset.id = entry.id;
+    item.classList.toggle('paid', entry.paid);
     fragment.querySelector('.entry-date').textContent = formatDate(entry.date);
     fragment.querySelector('.entry-times').textContent = `${startTime || '00:00'} – ${endTime || '00:00'}`;
     fragment.querySelector('.entry-task').textContent = entry.task || 'Keine Tätigkeit';
     fragment.querySelector('.entry-hours').textContent = formatHours(minutes);
     fragment.querySelector('.entry-pay').textContent = formatMoney(pay);
 
+    if (paidCheckbox) {
+      paidCheckbox.checked = entry.paid;
+      paidCheckbox.addEventListener('change', async (event) => {
+        const newPaidStatus = event.target.checked;
+        
+        try {
+          if (supabaseClient) {
+            // Update in Supabase first
+            const { error } = await supabaseClient
+              .from('arbeitsstunden')
+              .update({ bezahlt: newPaidStatus })
+              .eq('id', entry.id);
+            
+            if (error) {
+              throw error;
+            }
+
+            entry.paid = newPaidStatus;
+            saveEntries();
+            setSyncStatus('Bezahl-Status in Supabase aktualisiert.');
+          } else {
+            // Fallback if Supabase is not available
+            entry.paid = newPaidStatus;
+            saveEntries();
+            setSyncStatus('Bezahl-Status lokal aktualisiert (offline).');
+          }
+        } catch (error) {
+          console.error('Failed to update paid status:', error);
+          // Revert checkbox on error
+          event.target.checked = !newPaidStatus;
+          setSyncStatus(`Fehler beim Aktualisieren: ${error.message}`);
+        }
+      });
+    }
+
     entriesList.appendChild(fragment);
   });
 }
 
-function renderBarChart(containerId, data, formatter) {
+function renderLineChart(containerId, data, formatter) {
   const container = document.querySelector(`#${containerId}`);
-  if (!container) {
+  if (!container || !data.length) {
     return;
   }
 
-  const values = data.map((item) => item.value);
+  const values = data.map((item) => item.value || item.minutes || 0);
   const maxValue = Math.max(...values, 1);
+  const minValue = 0;
+
+  const chartHeight = 200;
+  const chartWidth = 100;
+  const barWidth = Math.max(4, chartWidth / data.length);
+  const padding = 40;
+
+  // Create SVG
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${chartWidth * 8 + padding * 2} ${chartHeight + padding * 2}`);
+  svg.setAttribute('class', 'line-chart-svg');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+  // Draw grid lines
+  const gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  gridGroup.setAttribute('class', 'grid-lines');
+  for (let i = 0; i <= 4; i += 1) {
+    const y = padding + ((chartHeight / 4) * i);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', padding);
+    line.setAttribute('y1', y);
+    line.setAttribute('x2', chartWidth * 8 + padding);
+    line.setAttribute('y2', y);
+    line.setAttribute('stroke', '#e0e0e0');
+    line.setAttribute('stroke-width', '1');
+    gridGroup.appendChild(line);
+  }
+  svg.appendChild(gridGroup);
+
+  // Draw axes
+  const axisGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  axisGroup.setAttribute('class', 'axes');
+  const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  xAxis.setAttribute('x1', padding);
+  xAxis.setAttribute('y1', padding + chartHeight);
+  xAxis.setAttribute('x2', chartWidth * 8 + padding);
+  xAxis.setAttribute('y2', padding + chartHeight);
+  xAxis.setAttribute('stroke', '#333');
+  xAxis.setAttribute('stroke-width', '2');
+  axisGroup.appendChild(xAxis);
+
+  const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  yAxis.setAttribute('x1', padding);
+  yAxis.setAttribute('y1', padding);
+  yAxis.setAttribute('x2', padding);
+  yAxis.setAttribute('y2', padding + chartHeight);
+  yAxis.setAttribute('stroke', '#333');
+  yAxis.setAttribute('stroke-width', '2');
+  axisGroup.appendChild(yAxis);
+  svg.appendChild(axisGroup);
+
+  // Draw line and points
+  const lineGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  lineGroup.setAttribute('class', 'line-data');
+  let pathData = '';
+
+  const pointsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  pointsGroup.setAttribute('class', 'points');
+
+  data.forEach((item, index) => {
+    const value = item.value || item.minutes || 0;
+    const x = padding + (index * chartWidth * 8) / data.length + (chartWidth * 8) / (data.length * 2);
+    const y = padding + chartHeight - ((value / maxValue) * chartHeight);
+
+    if (index === 0) {
+      pathData = `M ${x} ${y}`;
+    } else {
+      pathData += ` L ${x} ${y}`;
+    }
+
+    // Add point
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', x);
+    circle.setAttribute('cy', y);
+    circle.setAttribute('r', '3');
+    circle.setAttribute('fill', '#3563e9');
+    circle.setAttribute('class', 'data-point');
+
+    // Add tooltip
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `${item.label}: ${formatter(value)}`;
+    circle.appendChild(title);
+
+    pointsGroup.appendChild(circle);
+
+    // Add label
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', x);
+    label.setAttribute('y', padding + chartHeight + 20);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('font-size', '12');
+    label.setAttribute('fill', '#666');
+    label.textContent = item.label;
+    svg.appendChild(label);
+
+    // Add value label
+    const valueLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    valueLabel.setAttribute('x', x);
+    valueLabel.setAttribute('y', y - 10);
+    valueLabel.setAttribute('text-anchor', 'middle');
+    valueLabel.setAttribute('font-size', '11');
+    valueLabel.setAttribute('fill', '#3563e9');
+    valueLabel.setAttribute('font-weight', 'bold');
+    valueLabel.textContent = formatter(value);
+    svg.appendChild(valueLabel);
+  });
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', pathData);
+  path.setAttribute('stroke', '#3563e9');
+  path.setAttribute('stroke-width', '2');
+  path.setAttribute('fill', 'none');
+  lineGroup.appendChild(path);
+  svg.appendChild(lineGroup);
+  svg.appendChild(pointsGroup);
 
   container.innerHTML = '';
-  data.forEach((item) => {
-    const row = document.createElement('div');
-    row.className = 'chart-row';
-
-    const label = document.createElement('span');
-    label.className = 'chart-label';
-    label.textContent = item.label;
-
-    const barShell = document.createElement('div');
-    barShell.className = 'chart-bar-shell';
-
-    const bar = document.createElement('div');
-    bar.className = 'chart-bar';
-    bar.style.width = `${(item.value / maxValue) * 100}%`;
-
-    const value = document.createElement('span');
-    value.className = 'chart-value';
-    value.textContent = formatter(item.value);
-
-    barShell.appendChild(bar);
-    row.appendChild(label);
-    row.appendChild(barShell);
-    row.appendChild(value);
-    container.appendChild(row);
-  });
+  container.appendChild(svg);
 }
 
 function getAvailableMonths() {
@@ -662,6 +847,7 @@ function mapEntryToRow(entry) {
     pause_minuten: Number(entry.breakMinutes || 0),
     taetigkeit: entry.task || '',
     stunden_lohn: Number(entry.hourlyRate || 0),
+    bezahlt: entry.paid || false,
   };
 }
 
@@ -674,6 +860,7 @@ function mapRowToEntry(row) {
     breakMinutes: Number(row.pause_minuten || 0),
     task: row.taetigkeit || '',
     hourlyRate: Number(row.stunden_lohn || 13.9),
+    paid: row.bezahlt || false,
   };
 }
 
@@ -748,6 +935,7 @@ function parseCsv(text) {
     const breakMinutes = Number(map.pause || map.break_minutes || 0);
     const task = map.tätigkeit || map.task || map.notiz || map.note || '';
     const hourlyRate = Number(map.stundenlohn || map.hourlyrate || map.hourly_rate || 13.9);
+    const paid = map.bezahlt || map.paid || '';
 
     if (!date || !start || !end) {
       return null;
@@ -761,6 +949,7 @@ function parseCsv(text) {
       breakMinutes: Number.isFinite(breakMinutes) ? breakMinutes : 0,
       task,
       hourlyRate: Number.isFinite(hourlyRate) ? hourlyRate : 13.9,
+      paid: paid === 'true' || paid === '1' || paid === 'ja' || paid === 'yes',
     };
   }).filter(Boolean);
 }
@@ -808,4 +997,42 @@ function escapeCsv(value) {
     return `"${stringValue.replace(/"/g, '""')}"`;
   }
   return stringValue;
+}
+
+function getCurrentWeekPay() {
+  const now = new Date();
+  const currentDay = now.getDay();
+  const diffToMonday = (currentDay + 6) % 7;
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() - diffToMonday);
+
+  const startMs = monday.getTime();
+  const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
+
+  return entries.reduce((sum, entry) => {
+    const date = new Date(`${entry.date}T00:00:00`);
+    const ms = date.getTime();
+    if (ms >= startMs && ms < endMs) {
+      const minutes = calculateEntryMinutes(entry);
+      return sum + calculateEntryPay(entry, minutes);
+    }
+    return sum;
+  }, 0);
+}
+
+function getMonthPay(monthKey) {
+  return entries
+    .filter((entry) => getMonthKey(entry.date) === monthKey)
+    .reduce((sum, entry) => {
+      const minutes = calculateEntryMinutes(entry);
+      return sum + calculateEntryPay(entry, minutes);
+    }, 0);
+}
+
+function getTotalPay() {
+  return entries.reduce((sum, entry) => {
+    const minutes = calculateEntryMinutes(entry);
+    return sum + calculateEntryPay(entry, minutes);
+  }, 0);
 }

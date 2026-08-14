@@ -71,22 +71,50 @@
 
         <section class="panel summary-panel">
           <h2>Übersicht</h2>
-          <div class="stats">
-            <div class="stat-card">
-              <span>Diese Woche</span>
-              <strong id="week-hours">0,00h</strong>
-            </div>
-            <div class="stat-card">
-              <span>Diesen Monat</span>
-              <strong id="month-hours">0,00h</strong>
-            </div>
-            <div class="stat-card">
-              <span>Gesamt</span>
-              <strong id="total-hours">0,00h</strong>
+          
+          <button class="accordion-trigger" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.classList.toggle('hidden')">
+            <span>Arbeitszeit</span>
+            <span class="accordion-icon">▼</span>
+          </button>
+          <div class="accordion-content">
+            <div class="stats">
+              <div class="stat-card">
+                <span>Diese Woche</span>
+                <strong id="week-hours">0min</strong>
+              </div>
+              <div class="stat-card">
+                <span>Diesen Monat</span>
+                <strong id="month-hours">0min</strong>
+              </div>
+              <div class="stat-card">
+                <span>Gesamt</span>
+                <strong id="total-hours">0min</strong>
+              </div>
             </div>
           </div>
 
-          <div class="sync-actions">
+          <button class="accordion-trigger" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.classList.toggle('hidden')">
+            <span>Lohn</span>
+            <span class="accordion-icon">▼</span>
+          </button>
+          <div class="accordion-content">
+            <div class="stats">
+              <div class="stat-card">
+                <span>Diese Woche</span>
+                <strong id="week-pay">0,00 €</strong>
+              </div>
+              <div class="stat-card">
+                <span>Diesen Monat</span>
+                <strong id="month-pay">0,00 €</strong>
+              </div>
+              <div class="stat-card">
+                <span>Gesamt</span>
+                <strong id="total-pay">0,00 €</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="sync-actions" style="margin-top: 14px;">
             <button id="export-btn" class="secondary-btn" type="button">CSV exportieren</button>
             <label class="secondary-btn file-label" for="import-file">
               CSV importieren
@@ -94,16 +122,7 @@
             <input id="import-file" type="file" accept=".csv,text/csv" hidden />
           </div>
 
-          <div id="sync-status" class="sync-status">Supabase wird automatisch synchronisiert.</div>
-
-          <div class="helper-box">
-            <strong>So funktioniert die Synchronisierung:</strong>
-            <p>
-              Die App verbindet sich automatisch mit Supabase, lädt die aktuellen Einträge und
-              speichert neue Einträge dort sofort. CSV-Export und Import bleiben als Backup für
-              den Fall einer Wiederherstellung oder Migration erhalten.
-            </p>
-          </div>
+          <div id="sync-status" class="sync-status">Supabase wird automatisch synchronisiert…</div>
         </section>
 
         <section class="panel list-panel">
@@ -152,6 +171,10 @@
         <div class="entry-meta">
           <span class="entry-hours"></span>
           <span class="entry-pay"></span>
+          <label class="paid-checkbox">
+            <input type="checkbox" class="paid-toggle" />
+            <span class="paid-label">Bezahlt</span>
+          </label>
           <button class="delete-btn" type="button">Löschen</button>
         </div>
       </article>
