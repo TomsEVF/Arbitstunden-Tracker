@@ -620,6 +620,125 @@ select:focus {
   opacity: 0;
 }
 
+/* Form Accordion */
+.form-accordion {
+  max-height: 1000px;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease, margin-top 0.3s ease;
+  opacity: 1;
+  margin-top: 12px;
+}
+
+.form-accordion.hidden {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+}
+
+/* Modal Styles */
+.modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(62, 50, 40, 0.4);
+  z-index: 1000;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.modal.hidden {
+  display: none;
+  opacity: 0;
+}
+
+.modal-content {
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+}
+
+.modal-close:hover {
+  color: var(--danger);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.modal-actions button {
+  flex: 1;
+}
+
+/* Edit Button */
+.edit-btn {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.edit-btn:hover {
+  background: rgba(200, 132, 58, 0.1);
+  color: var(--primary-dark);
+}
+
 /* Responsive design */
 @media (max-width: 900px) {
   .app-shell {
@@ -727,6 +846,38 @@ select:focus {
 
   .entries-list {
     gap: 6px;
+  }
+
+  .entry-meta {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .entry-hours,
+  .entry-pay {
+    font-size: 0.8rem;
+  }
+
+  .edit-btn {
+    font-size: 0.9rem;
+  }
+
+  .modal-content {
+    width: 95%;
+    padding: 16px;
+  }
+
+  .modal-header h2 {
+    font-size: 0.9rem;
+  }
+
+  .modal-actions {
+    gap: 6px;
+  }
+
+  .modal-actions button {
+    font-size: 0.85rem;
+    padding: 8px 10px;
   }
 
   .entry-item {

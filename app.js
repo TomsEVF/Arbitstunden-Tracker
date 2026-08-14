@@ -16,6 +16,7 @@ const DEFAULT_ENTRIES = [
 ];
 
 const form = document.querySelector('#hours-form');
+const toggleFormBtn = document.querySelector('#toggle-form-btn');
 const entriesList = document.querySelector('#entries-list');
 const filterMonth = document.querySelector('#filter-month');
 const exportBtn = document.querySelector('#export-btn');
@@ -32,6 +33,20 @@ const breakInput = document.querySelector('#break');
 const taskInput = document.querySelector('#task');
 const hourlyRateInput = document.querySelector('#hourly-rate');
 
+// Edit Modal
+const editModal = document.querySelector('#edit-modal');
+const editForm = document.querySelector('#edit-form');
+const closeModalBtn = document.querySelector('#close-modal');
+const cancelModalBtn = document.querySelector('#cancel-modal');
+const editDateInput = document.querySelector('#edit-date');
+const editStartInput = document.querySelector('#edit-start');
+const editEndInput = document.querySelector('#edit-end');
+const editBreakInput = document.querySelector('#edit-break');
+const editTaskInput = document.querySelector('#edit-task');
+const editHourlyRateInput = document.querySelector('#edit-hourly-rate');
+
+let currentEditingEntryId = null;
+
 let entries = loadEntries();
 let supabaseClient = null;
 
@@ -46,6 +61,22 @@ if ('serviceWorker' in navigator) {
 initializeForm();
 initializeSupabase();
 render();
+
+// Form accordion toggle
+toggleFormBtn.addEventListener('click', () => {
+  form.classList.toggle('hidden');
+  toggleFormBtn.classList.toggle('collapsed');
+});
+
+// Modal event listeners
+closeModalBtn.addEventListener('click', closeEditModal);
+cancelModalBtn.addEventListener('click', closeEditModal);
+
+editModal.addEventListener('click', (event) => {
+  if (event.target === editModal) {
+    closeEditModal();
+  }
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -93,6 +124,8 @@ form.addEventListener('submit', async (event) => {
 
     form.reset();
     initializeForm();
+    form.classList.add('hidden');
+    toggleFormBtn.classList.add('collapsed');
     render();
   } catch (error) {
     console.error('Supabase insert failed:', error);
@@ -552,6 +585,14 @@ function renderEntries() {
       });
     }
 
+    // Add edit button handler
+    const editBtn = fragment.querySelector('.edit-btn');
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        openEditModal(entry);
+      });
+    }
+
     entriesList.appendChild(fragment);
   });
 }
@@ -879,7 +920,7 @@ function toCsv(rows) {
       escapeCsv(row.task || ''),
       Number(row.hourlyRate || 0),
       pay,
-      '',
+      row.paid ? 'ja' : 'nein',
       '',
     ];
     lines.push(csvRow.join(','));
@@ -931,11 +972,11 @@ function parseCsv(text) {
 
     const date = map.datum || map.date || '';
     const start = map.angefangen || map.start || '';
-    const end = map.aufgehört || map.end || '';
+    const end = map.aufgehoert || map.end || '';
     const breakMinutes = Number(map.pause || map.break_minutes || 0);
-    const task = map.tätigkeit || map.task || map.notiz || map.note || '';
+    const task = map.taetigkeit || map.task || map.notiz || map.note || '';
     const hourlyRate = Number(map.stundenlohn || map.hourlyrate || map.hourly_rate || 13.9);
-    const paid = map.bezahlt || map.paid || '';
+    const paid = String(map.bezahlt || map.paid || '').toLowerCase();
 
     if (!date || !start || !end) {
       return null;
@@ -988,6 +1029,10 @@ function normalizeHeader(value) {
   return String(value || '')
     .trim()
     .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
     .replace(/[^a-z0-9]/g, '');
 }
 
@@ -1036,3 +1081,85 @@ function getTotalPay() {
     return sum + calculateEntryPay(entry, minutes);
   }, 0);
 }
+
+// Edit Modal Functions
+function openEditModal(entry) {
+  currentEditingEntryId = entry.id;
+  editDateInput.value = entry.date;
+  editStartInput.value = entry.start;
+  editEndInput.value = entry.end;
+  editBreakInput.value = entry.breakMinutes || 0;
+  editTaskInput.value = entry.task || '';
+  editHourlyRateInput.value = entry.hourlyRate || 13.9;
+  
+  editModal.classList.remove('hidden');
+}
+
+function closeEditModal() {
+  currentEditingEntryId = null;
+  editModal.classList.add('hidden');
+  editForm.reset();
+}
+
+// Edit form submit
+editForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  if (!currentEditingEntryId) {
+    return;
+  }
+
+  const date = editDateInput.value;
+  const start = editStartInput.value;
+  const end = editEndInput.value;
+  const breakMinutes = Number(editBreakInput.value || 0);
+  const task = editTaskInput.value.trim();
+  const hourlyRate = Number(editHourlyRateInput.value || 0);
+
+  if (!date || !start || !end) {
+    alert('Bitte Datum, Start und Ende eingeben.');
+    return;
+  }
+
+  const diffMinutes = calculateMinutes(start, end) - breakMinutes;
+  if (diffMinutes <= 0) {
+    alert('Die Arbeitszeit muss größer als 0 Minuten sein.');
+    return;
+  }
+
+  try {
+    const entryIndex = entries.findIndex((e) => e.id === currentEditingEntryId);
+    if (entryIndex === -1) {
+      throw new Error('Eintrag nicht gefunden');
+    }
+
+    const updatedEntry = {
+      ...entries[entryIndex],
+      date,
+      start,
+      end,
+      breakMinutes,
+      task,
+      hourlyRate: Number.isFinite(hourlyRate) ? hourlyRate : 0,
+    };
+
+    if (supabaseClient) {
+      const row = mapEntryToRow(updatedEntry);
+      const { error } = await supabaseClient
+        .from('arbeitsstunden')
+        .update(row)
+        .eq('id', currentEditingEntryId);
+      
+      if (error) throw error;
+      setSyncStatus('Eintrag in Supabase aktualisiert.');
+    }
+
+    entries[entryIndex] = updatedEntry;
+    saveEntries();
+    closeEditModal();
+    render();
+  } catch (error) {
+    console.error('Update failed:', error);
+    alert(`Fehler beim Aktualisieren: ${error.message}`);
+  }
+});

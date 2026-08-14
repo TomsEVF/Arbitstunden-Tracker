@@ -24,9 +24,12 @@
 
       <main class="layout">
         <section class="panel form-panel">
-          <h2>Neuen Eintrag erfassen</h2>
+          <button id="toggle-form-btn" class="accordion-trigger collapsed" type="button">
+            <span>Neuen Eintrag erfassen</span>
+            <span class="accordion-icon">▼</span>
+          </button>
 
-          <form id="hours-form">
+          <form id="hours-form" class="form-accordion hidden">
             <div class="field-group">
               <label for="date">Datum</label>
               <input id="date" name="date" type="date" required />
@@ -175,10 +178,59 @@
             <input type="checkbox" class="paid-toggle" />
             <span class="paid-label">Bezahlt</span>
           </label>
+          <button class="edit-btn" type="button" title="Bearbeiten">✎</button>
           <button class="delete-btn" type="button">Löschen</button>
         </div>
       </article>
     </template>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Eintrag bearbeiten</h2>
+          <button id="close-modal" class="modal-close" type="button">✕</button>
+        </div>
+        <form id="edit-form">
+          <div class="field-group">
+            <label for="edit-date">Datum</label>
+            <input id="edit-date" name="date" type="date" required />
+          </div>
+
+          <div class="two-col">
+            <div class="field-group">
+              <label for="edit-start">Angefangen</label>
+              <input id="edit-start" name="start" type="time" required />
+            </div>
+
+            <div class="field-group">
+              <label for="edit-end">Aufgehört</label>
+              <input id="edit-end" name="end" type="time" required />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label for="edit-break">Pause in Minuten</label>
+            <input id="edit-break" name="break" type="number" min="0" max="180" value="0" />
+          </div>
+
+          <div class="field-group">
+            <label for="edit-task">Tätigkeit</label>
+            <input id="edit-task" name="task" type="text" maxlength="120" />
+          </div>
+
+          <div class="field-group">
+            <label for="edit-hourly-rate">Stundenlohn</label>
+            <input id="edit-hourly-rate" name="hourly-rate" type="number" min="0" step="0.01" />
+          </div>
+
+          <div class="modal-actions">
+            <button type="submit" class="primary-btn">Speichern</button>
+            <button id="cancel-modal" type="button" class="secondary-btn">Abbrechen</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
