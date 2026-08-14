@@ -125,11 +125,22 @@ label {
 input,
 select {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: block;
   border: 1px solid var(--border);
   background: #f9fbff;
   border-radius: 12px;
   padding: 12px 14px;
   color: var(--text);
+}
+
+input[type='date'],
+input[type='time'] {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 input:focus,
@@ -421,6 +432,10 @@ select:focus {
     grid-column: auto;
   }
 
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
   .stats {
     grid-template-columns: 1fr;
   }
@@ -436,5 +451,12 @@ select:focus {
   .list-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  input[type='date'],
+  input[type='time'] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 }

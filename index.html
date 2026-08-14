@@ -87,8 +87,6 @@
           </div>
 
           <div class="sync-actions">
-            <button id="connect-sync-btn" class="secondary-btn" type="button">Supabase verbinden</button>
-            <button id="sync-btn" class="secondary-btn" type="button">Jetzt synchronisieren</button>
             <button id="export-btn" class="secondary-btn" type="button">CSV exportieren</button>
             <label class="secondary-btn file-label" for="import-file">
               CSV importieren
@@ -96,14 +94,14 @@
             <input id="import-file" type="file" accept=".csv,text/csv" hidden />
           </div>
 
-          <div id="sync-status" class="sync-status">Supabase noch nicht verbunden.</div>
+          <div id="sync-status" class="sync-status">Supabase wird automatisch synchronisiert.</div>
 
           <div class="helper-box">
             <strong>So funktioniert die Synchronisierung:</strong>
             <p>
-              Die App speichert die Einträge in Supabase und hält sie damit auf allen Geräten aktuell.
-              CSV-Export und Import bleiben als Backup für den Fall einer Wiederherstellung oder
-              Migration erhalten.
+              Die App verbindet sich automatisch mit Supabase, lädt die aktuellen Einträge und
+              speichert neue Einträge dort sofort. CSV-Export und Import bleiben als Backup für
+              den Fall einer Wiederherstellung oder Migration erhalten.
             </p>
           </div>
         </section>

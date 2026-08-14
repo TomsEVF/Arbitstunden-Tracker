@@ -18,8 +18,6 @@ const form = document.querySelector('#hours-form');
 const entriesList = document.querySelector('#entries-list');
 const filterMonth = document.querySelector('#filter-month');
 const exportBtn = document.querySelector('#export-btn');
-const syncBtn = document.querySelector('#sync-btn');
-const connectSyncBtn = document.querySelector('#connect-sync-btn');
 const importInput = document.querySelector('#import-file');
 const syncStatus = document.querySelector('#sync-status');
 const tabButtons = Array.from(document.querySelectorAll('.tab-button'));
@@ -80,21 +78,22 @@ form.addEventListener('submit', async (event) => {
   };
 
   try {
+    entries.unshift(newEntry);
+    saveEntries();
+
     if (supabaseClient) {
       const row = mapEntryToRow(newEntry);
       const { error } = await supabaseClient.from('arbeitsstunden').insert([row]);
       if (error) throw error;
+      await fetchFromSupabase();
       setSyncStatus('Eintrag in Supabase gespeichert.');
     }
 
-    entries.unshift(newEntry);
-    saveEntries();
     form.reset();
     initializeForm();
     render();
   } catch (error) {
     console.error('Supabase insert failed:', error);
-    entries.unshift(newEntry);
     saveEntries();
     render();
     setSyncStatus('Lokaler Speicher verwendet, da Supabase nicht erreichbar war.');
@@ -110,20 +109,6 @@ exportBtn.addEventListener('click', () => {
   link.download = 'arbeitsstunden.csv';
   link.click();
   URL.revokeObjectURL(url);
-});
-
-connectSyncBtn.addEventListener('click', async () => {
-  await initializeSupabase();
-  setSyncStatus(supabaseClient ? 'Supabase verbunden.' : 'Supabase ist nicht verfügbar.');
-});
-
-syncBtn.addEventListener('click', async () => {
-  if (!supabaseClient) {
-    setSyncStatus('Supabase noch nicht verbunden.');
-    return;
-  }
-
-  await fetchFromSupabase();
 });
 
 importInput.addEventListener('change', async (event) => {
@@ -269,10 +254,8 @@ async function initializeSupabase() {
 
   try {
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { error } = await client.from('arbeitsstunden').select('id').limit(1);
-    if (error) throw error;
     supabaseClient = client;
-    setSyncStatus('Mit Supabase verbunden.');
+    setSyncStatus('Supabase wird automatisch synchronisiert…');
     await fetchFromSupabase();
   } catch (error) {
     console.warn('Supabase connection failed:', error);
@@ -288,20 +271,45 @@ async function fetchFromSupabase() {
     return;
   }
 
-  const { data, error } = await supabaseClient
-    .from('arbeitsstunden')
-    .select('*')
-    .order('datum', { ascending: false })
-    .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabaseClient
+      .from('arbeitsstunden')
+      .select('*')
+      .order('datum', { ascending: false })
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    throw error;
+    if (error) {
+      throw error;
+    }
+
+    if ((data || []).length) {
+      entries = (data || []).map(mapRowToEntry);
+      saveEntries();
+      render();
+      setSyncStatus('Daten aus Supabase synchronisiert.');
+      return;
+    }
+
+    if (entries.length) {
+      const rows = entries.map(mapEntryToRow);
+      const { error: insertError } = await supabaseClient.from('arbeitsstunden').insert(rows);
+      if (insertError) {
+        throw insertError;
+      }
+      setSyncStatus('Lokale Einträge wurden in Supabase hochgeladen.');
+      await fetchFromSupabase();
+      return;
+    }
+
+    saveEntries();
+    render();
+    setSyncStatus('Supabase ist leer. Lokaler Stand bleibt erhalten.');
+  } catch (error) {
+    console.warn('Supabase sync failed:', error);
+    entries = loadEntries();
+    render();
+    setSyncStatus('Synchronisierung fehlgeschlagen. Lokaler Modus aktiv.');
   }
-
-  entries = (data || []).map(mapRowToEntry);
-  saveEntries();
-  render();
-  setSyncStatus('Daten aus Supabase synchronisiert.');
 }
 
 function initializeForm() {
@@ -440,10 +448,12 @@ function renderEntries() {
     const item = fragment.querySelector('.entry-item');
     const minutes = calculateEntryMinutes(entry);
     const pay = calculateEntryPay(entry, minutes);
+    const startTime = normalizeTimeValue(entry.start);
+    const endTime = normalizeTimeValue(entry.end);
 
     item.dataset.id = entry.id;
     fragment.querySelector('.entry-date').textContent = formatDate(entry.date);
-    fragment.querySelector('.entry-times').textContent = `${entry.start} – ${entry.end}`;
+    fragment.querySelector('.entry-times').textContent = `${startTime || '00:00'} – ${endTime || '00:00'}`;
     fragment.querySelector('.entry-task').textContent = entry.task || 'Keine Tätigkeit';
     fragment.querySelector('.entry-hours').textContent = formatHours(minutes);
     fragment.querySelector('.entry-pay').textContent = formatMoney(pay);
@@ -565,16 +575,58 @@ function calculateEntryPay(entry, minutes = calculateEntryMinutes(entry)) {
   return hours * rate;
 }
 
+function normalizeTimeValue(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const match = trimmed.match(/^([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?$/);
+  if (!match) {
+    return trimmed;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours > 23 || minutes > 59) {
+    return trimmed;
+  }
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
 function calculateMinutes(start, end) {
-  const startDate = new Date(`2000-01-01T${start}:00`);
-  const endDate = new Date(`2000-01-01T${end}:00`);
+  const startTime = normalizeTimeValue(start);
+  const endTime = normalizeTimeValue(end);
+
+  if (!startTime || !endTime) {
+    return 0;
+  }
+
+  const startDate = new Date(`2000-01-01T${startTime}:00`);
+  const endDate = new Date(`2000-01-01T${endTime}:00`);
   const diff = endDate.getTime() - startDate.getTime();
   return Math.max(0, Math.round(diff / 60000));
 }
 
 function formatHours(totalMinutes) {
-  const hours = totalMinutes / 60;
-  return `${hours.toFixed(2).replace('.', ',')}h`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return minutes > 0 ? `${minutes}min` : '0min';
+  }
+
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}min`;
 }
 
 function formatMoney(amount) {
@@ -617,8 +669,8 @@ function mapRowToEntry(row) {
   return {
     id: row.id,
     date: row.datum,
-    start: row.angefangen,
-    end: row.aufgehört,
+    start: normalizeTimeValue(row.angefangen),
+    end: normalizeTimeValue(row.aufgehört),
     breakMinutes: Number(row.pause_minuten || 0),
     task: row.taetigkeit || '',
     hourlyRate: Number(row.stunden_lohn || 13.9),
