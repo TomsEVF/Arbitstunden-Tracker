@@ -6,7 +6,7 @@
     <title>Arbeitsstunden</title>
     <meta
       name="description"
-      content="Mobile Arbeitsstundenverwaltung für Minijob mit Export/Import für OneDrive oder GitHub Pages."
+      content="Mobile Arbeitsstundenverwaltung für Minijob mit Supabase-Cloudspeicherung und Statistiken."
     />
     <meta name="theme-color" content="#3563e9" />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -87,6 +87,8 @@
           </div>
 
           <div class="sync-actions">
+            <button id="connect-sync-btn" class="secondary-btn" type="button">Supabase verbinden</button>
+            <button id="sync-btn" class="secondary-btn" type="button">Jetzt synchronisieren</button>
             <button id="export-btn" class="secondary-btn" type="button">CSV exportieren</button>
             <label class="secondary-btn file-label" for="import-file">
               CSV importieren
@@ -94,23 +96,50 @@
             <input id="import-file" type="file" accept=".csv,text/csv" hidden />
           </div>
 
+          <div id="sync-status" class="sync-status">Supabase noch nicht verbunden.</div>
+
           <div class="helper-box">
             <strong>So funktioniert die Synchronisierung:</strong>
             <p>
-              Die App speichert Einträge lokal im Browser. Du kannst sie als CSV exportieren und in
-              OneDrive, Dropbox oder GitHub sichern. Dadurch bleibt die Datei überall verfügbar und
-              lässt sich leicht wieder importieren.
+              Die App speichert die Einträge in Supabase und hält sie damit auf allen Geräten aktuell.
+              CSV-Export und Import bleiben als Backup für den Fall einer Wiederherstellung oder
+              Migration erhalten.
             </p>
           </div>
         </section>
 
         <section class="panel list-panel">
-          <div class="list-header">
-            <h2>Einträge</h2>
-            <select id="filter-month" aria-label="Monat filtern"></select>
+          <div class="tab-nav" aria-label="Tabs">
+            <button type="button" class="tab-button active" data-tab="entries">Einträge</button>
+            <button type="button" class="tab-button" data-tab="statistics">Statistiken</button>
           </div>
 
-          <div id="entries-list" class="entries-list" aria-live="polite"></div>
+          <div id="entries-tab-panel" class="tab-panel">
+            <div class="list-header">
+              <h2>Einträge</h2>
+              <select id="filter-month" aria-label="Monat filtern"></select>
+            </div>
+
+            <div id="entries-list" class="entries-list" aria-live="polite"></div>
+          </div>
+
+          <div id="statistics-tab-panel" class="tab-panel hidden">
+            <div class="list-header">
+              <h2>Statistiken</h2>
+            </div>
+
+            <div class="chart-layout">
+              <div class="chart-card">
+                <h3>Arbeitszeit-Statistik</h3>
+                <div id="time-chart" class="chart" aria-label="Arbeitszeit pro Monat"></div>
+              </div>
+
+              <div class="chart-card">
+                <h3>Lohn-Statistik</h3>
+                <div id="pay-chart" class="chart" aria-label="Lohn pro Monat"></div>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
     </div>
@@ -125,8 +154,12 @@
         <div class="entry-meta">
           <span class="entry-hours"></span>
           <span class="entry-pay"></span>
+          <button class="delete-btn" type="button">Löschen</button>
+        </div>
+      </article>
     </template>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
 </html>

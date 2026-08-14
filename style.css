@@ -179,6 +179,16 @@ select:focus {
   margin-top: 16px;
 }
 
+.sync-status {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #eef4ff;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
 .file-label {
   cursor: pointer;
 }
@@ -223,6 +233,91 @@ select:focus {
   font-size: clamp(1rem, 2vw, 1.26rem);
 }
 
+.tab-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.tab-button {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: #f4f8ff;
+  color: var(--muted);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tab-button.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+  border-color: transparent;
+}
+
+.tab-panel.hidden {
+  display: none;
+}
+
+.chart-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.chart-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
+  padding: 14px 12px 12px;
+}
+
+.chart-card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 64px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.chart-label {
+  font-weight: 600;
+}
+
+.chart-bar-shell {
+  height: 16px;
+  background: #edf2fb;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.chart-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), #66a7ff);
+  display: block;
+  min-width: 8%;
+}
+
+.chart-value {
+  text-align: right;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .list-header {
   display: flex;
   align-items: center;
@@ -245,6 +340,17 @@ select:focus {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px 16px;
+  user-select: none;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.entry-item:hover {
+  background: #f0f6ff;
+}
+
+.entry-item:active {
+  opacity: 0.9;
 }
 
 .entry-main {
@@ -286,6 +392,13 @@ select:focus {
   color: var(--danger);
   padding: 8px 10px;
   font-weight: 600;
+  transition: background 0.2s, color 0.2s;
+}
+
+.delete-btn:hover,
+.delete-btn:active {
+  background: rgba(217, 74, 74, 0.2);
+  color: #8b0000;
 }
 
 .empty-state {
