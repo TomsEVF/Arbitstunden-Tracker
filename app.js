@@ -1,6 +1,15 @@
 const STORAGE_KEY = 'arbeitsstunden_entries_v1';
+const SETTINGS_KEY = 'arbeitsstunden_settings_v1';
 const SUPABASE_URL = 'https://yshmaepjdgcyuddnheub.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_bhnloJBb1UVdnH9bS_Pomw_6lfq9qvW';
+
+const DEFAULT_SETTINGS = {
+  monthlySalary: 602.25,
+  hourlyWage: 13.9,
+  contractStart: '2026-08-01',
+  contractEnd: '2027-07-31',
+  paydayDayOfMonth: null,
+};
 
 const DEFAULT_ENTRIES = [
   {
@@ -11,7 +20,6 @@ const DEFAULT_ENTRIES = [
     breakMinutes: 30,
     task: 'Beispiel: Minijob',
     hourlyRate: 13.9,
-    paid: false,
   },
 ];
 
@@ -25,13 +33,27 @@ const syncStatus = document.querySelector('#sync-status');
 const tabButtons = Array.from(document.querySelectorAll('.tab-button'));
 const entriesTabPanel = document.querySelector('#entries-tab-panel');
 const statisticsTabPanel = document.querySelector('#statistics-tab-panel');
+const settingsTabPanel = document.querySelector('#settings-tab-panel');
+const tabPanels = {
+  entries: entriesTabPanel,
+  statistics: statisticsTabPanel,
+  settings: settingsTabPanel,
+};
+
+const settingsForm = document.querySelector('#settings-form');
+const settingMonthlySalaryInput = document.querySelector('#setting-monthly-salary');
+const settingHourlyWageInput = document.querySelector('#setting-hourly-wage');
+const settingContractStartInput = document.querySelector('#setting-contract-start');
+const settingContractEndInput = document.querySelector('#setting-contract-end');
+const settingPaydayInput = document.querySelector('#setting-payday');
+const paydayBanner = document.querySelector('#payday-banner');
+const paydayText = document.querySelector('#payday-text');
 
 const dateInput = document.querySelector('#date');
 const startInput = document.querySelector('#start');
 const endInput = document.querySelector('#end');
 const breakInput = document.querySelector('#break');
 const taskInput = document.querySelector('#task');
-const hourlyRateInput = document.querySelector('#hourly-rate');
 
 // Edit Modal
 const editModal = document.querySelector('#edit-modal');
@@ -47,6 +69,7 @@ const editHourlyRateInput = document.querySelector('#edit-hourly-rate');
 
 let currentEditingEntryId = null;
 
+let settings = loadSettings();
 let entries = loadEntries();
 let supabaseClient = null;
 
@@ -86,7 +109,6 @@ form.addEventListener('submit', async (event) => {
   const end = endInput.value;
   const breakMinutes = Number(breakInput.value || 0);
   const task = taskInput.value.trim();
-  const hourlyRate = Number(hourlyRateInput.value || 0);
 
   if (!date || !start || !end) {
     alert('Bitte Datum, Start und Ende eingeben.');
@@ -106,8 +128,7 @@ form.addEventListener('submit', async (event) => {
     end,
     breakMinutes,
     task,
-    hourlyRate: Number.isFinite(hourlyRate) ? hourlyRate : 0,
-    paid: false,
+    hourlyRate: settings.hourlyWage,
   };
 
   try {
@@ -281,6 +302,31 @@ tabButtons.forEach((button) => {
   });
 });
 
+settingsForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+
+  const monthlySalary = Number(settingMonthlySalaryInput.value || 0);
+  const hourlyWage = Number(settingHourlyWageInput.value || 0);
+  const paydayRaw = Number(settingPaydayInput.value);
+  const paydayDayOfMonth = Number.isFinite(paydayRaw) && paydayRaw >= 1 && paydayRaw <= 31 ? paydayRaw : null;
+
+  if (!hourlyWage) {
+    alert('Bitte einen gültigen Stundenlohn eingeben.');
+    return;
+  }
+
+  settings = {
+    monthlySalary: Number.isFinite(monthlySalary) ? monthlySalary : 0,
+    hourlyWage,
+    contractStart: settingContractStartInput.value || null,
+    contractEnd: settingContractEndInput.value || null,
+    paydayDayOfMonth,
+  };
+  saveSettings();
+  render();
+  setSyncStatus('Einstellungen gespeichert.');
+});
+
 async function initializeSupabase() {
   if (!window.supabase || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
     setSyncStatus('Supabase-Script fehlt oder Konfiguration unvollständig.');
@@ -354,7 +400,40 @@ function initializeForm() {
   endInput.value = '13:00';
   breakInput.value = '0';
   taskInput.value = '';
-  hourlyRateInput.value = '13.90';
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) {
+      return { ...DEFAULT_SETTINGS };
+    }
+
+    const parsed = JSON.parse(raw);
+    const monthlySalary = Number(parsed.monthlySalary);
+    const hourlyWage = Number(parsed.hourlyWage);
+    const paydayDayOfMonth = Number(parsed.paydayDayOfMonth);
+
+    return {
+      monthlySalary: Number.isFinite(monthlySalary) ? monthlySalary : DEFAULT_SETTINGS.monthlySalary,
+      hourlyWage: Number.isFinite(hourlyWage) && hourlyWage > 0 ? hourlyWage : DEFAULT_SETTINGS.hourlyWage,
+      contractStart:
+        typeof parsed.contractStart === 'string' && parsed.contractStart
+          ? parsed.contractStart
+          : DEFAULT_SETTINGS.contractStart,
+      contractEnd:
+        typeof parsed.contractEnd === 'string' && parsed.contractEnd ? parsed.contractEnd : DEFAULT_SETTINGS.contractEnd,
+      paydayDayOfMonth:
+        Number.isFinite(paydayDayOfMonth) && paydayDayOfMonth >= 1 && paydayDayOfMonth <= 31 ? paydayDayOfMonth : null,
+    };
+  } catch (error) {
+    console.warn('Could not read settings:', error);
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
 function loadEntries() {
@@ -385,6 +464,7 @@ function setSyncStatus(message) {
 function render() {
   renderFilterOptions();
   renderSummary();
+  renderSettingsTab();
   renderCharts();
   renderEntries();
   updateTabView();
@@ -392,9 +472,7 @@ function render() {
 
 function updateTabView() {
   const activeTab = document.querySelector('.tab-button.active')?.dataset.tab || 'entries';
-
-  entriesTabPanel.classList.toggle('hidden', activeTab !== 'entries');
-  statisticsTabPanel.classList.toggle('hidden', activeTab !== 'statistics');
+  setActiveTabPanels(activeTab);
 }
 
 function setActiveTab(tabName) {
@@ -403,8 +481,72 @@ function setActiveTab(tabName) {
     button.classList.toggle('active', isActive);
   });
 
-  entriesTabPanel.classList.toggle('hidden', tabName !== 'entries');
-  statisticsTabPanel.classList.toggle('hidden', tabName !== 'statistics');
+  setActiveTabPanels(tabName);
+}
+
+function setActiveTabPanels(tabName) {
+  Object.entries(tabPanels).forEach(([key, panel]) => {
+    panel.classList.toggle('hidden', key !== tabName);
+  });
+}
+
+function renderSettingsTab() {
+  settingMonthlySalaryInput.value = settings.monthlySalary;
+  settingHourlyWageInput.value = settings.hourlyWage;
+  settingContractStartInput.value = settings.contractStart || '';
+  settingContractEndInput.value = settings.contractEnd || '';
+  settingPaydayInput.value = settings.paydayDayOfMonth || '';
+
+  document.querySelector('#setting-month-hours').textContent = formatHoursFromDecimal(getMonthlyTargetHours());
+  document.querySelector('#setting-week-hours').textContent = formatHoursFromDecimal(getAverageWeeklyTargetHours());
+
+  renderPaydayInfo();
+}
+
+function getNextPayday(referenceDate = new Date()) {
+  if (!settings.paydayDayOfMonth) {
+    return null;
+  }
+
+  const today = new Date(referenceDate);
+  today.setHours(0, 0, 0, 0);
+
+  const paydayInMonth = (year, month) => {
+    const day = Math.min(settings.paydayDayOfMonth, getDaysInMonth(year, month));
+    return new Date(year, month - 1, day);
+  };
+
+  let candidate = paydayInMonth(today.getFullYear(), today.getMonth() + 1);
+  if (candidate < today) {
+    const nextMonthFirst = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    candidate = paydayInMonth(nextMonthFirst.getFullYear(), nextMonthFirst.getMonth() + 1);
+  }
+
+  const daysUntil = Math.round((candidate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  return { date: candidate, daysUntil };
+}
+
+function renderPaydayInfo() {
+  const next = getNextPayday();
+  const preview = document.querySelector('#payday-preview');
+
+  if (!next) {
+    if (paydayBanner) paydayBanner.classList.add('hidden');
+    if (preview) preview.textContent = 'Kein Zahltag eingestellt.';
+    return;
+  }
+
+  const dateLabel = next.date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const daysLabel = next.daysUntil <= 0 ? 'heute' : next.daysUntil === 1 ? 'in 1 Tag' : `in ${next.daysUntil} Tagen`;
+  const text = `Nächste Auszahlung: ${dateLabel} (${daysLabel}) · ${formatMoney(settings.monthlySalary)}`;
+
+  if (paydayBanner && paydayText) {
+    paydayText.textContent = text;
+    paydayBanner.classList.remove('hidden');
+  }
+  if (preview) {
+    preview.textContent = `→ ${text}`;
+  }
 }
 
 function renderFilterOptions() {
@@ -435,52 +577,307 @@ function renderFilterOptions() {
 }
 
 function renderSummary() {
+  const week = getWeekProgress();
+  const month = getMonthProgress();
+
+  document.querySelector('#week-actual-hours').textContent = formatHoursFromDecimal(week.actualHours);
+  document.querySelector('#week-target-hours').textContent = formatHoursFromDecimal(week.adjustedTargetHours);
+
+  const weekBalanceEl = document.querySelector('#week-balance');
+  weekBalanceEl.textContent = formatSignedHours(week.balanceHours);
+  weekBalanceEl.classList.toggle('ahead', week.balanceHours > 1 / 60);
+  weekBalanceEl.classList.toggle('behind', week.balanceHours < -1 / 60);
+
+  const weekFill = document.querySelector('#week-progress-fill');
+  weekFill.style.width = `${
+    week.adjustedTargetHours > 0 ? Math.min(100, (week.actualHours / week.adjustedTargetHours) * 100) : 0
+  }%`;
+
+  document.querySelector('#month-actual-hours').textContent = formatHoursFromDecimal(month.actualHours);
+  document.querySelector('#month-target-hours').textContent = formatHoursFromDecimal(month.targetHours);
+
+  const monthRemainingEl = document.querySelector('#month-remaining');
+  monthRemainingEl.textContent =
+    month.remainingHours > 0 ? `${formatHoursFromDecimal(month.remainingHours)} übrig` : 'Monatsziel erreicht';
+
+  const monthFill = document.querySelector('#month-progress-fill');
+  monthFill.style.width = `${
+    month.targetHours > 0 ? Math.min(100, (month.actualHours / month.targetHours) * 100) : 0
+  }%`;
+
   const totalMinutes = entries.reduce((sum, entry) => sum + calculateEntryMinutes(entry), 0);
-  const thisMonth = getCurrentMonthKey();
-  const thisWeek = getCurrentWeekMinutes();
+  document.querySelector('#total-hours').textContent = formatHours(totalMinutes);
+  document.querySelector('#total-pay').textContent = formatMoney(getTotalPay());
+}
 
-  const weekHours = formatHours(thisWeek);
-  const monthHours = formatHours(getMinutesForMonth(thisMonth));
-  const totalHours = formatHours(totalMinutes);
+function getDaysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
 
-  const weekPay = getCurrentWeekPay();
-  const monthPay = getMonthPay(thisMonth);
-  const totalPay = getTotalPay();
+function getMonthlyTargetHours() {
+  if (!settings.hourlyWage) {
+    return 0;
+  }
+  return settings.monthlySalary / settings.hourlyWage;
+}
 
-  document.querySelector('#week-hours').textContent = weekHours;
-  document.querySelector('#month-hours').textContent = monthHours;
-  document.querySelector('#total-hours').textContent = totalHours;
+function getAverageWeeklyTargetHours() {
+  return (getMonthlyTargetHours() * 12) / 52;
+}
 
-  document.querySelector('#week-pay').textContent = formatMoney(weekPay);
-  document.querySelector('#month-pay').textContent = formatMoney(monthPay);
-  document.querySelector('#total-pay').textContent = formatMoney(totalPay);
+function monthKeyToDate(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(year, month - 1, 1);
+}
+
+function getEarliestEntryDate() {
+  if (!entries.length) {
+    return null;
+  }
+  return entries.reduce((earliest, entry) => {
+    const date = new Date(`${entry.date}T00:00:00`);
+    return !earliest || date < earliest ? date : earliest;
+  }, null);
+}
+
+// The employment contract's start/end dates are the authoritative bound for
+// carry-over and statistics; without them, fall back to the first logged entry.
+function getTrackingStartDate() {
+  if (settings.contractStart) {
+    return new Date(`${settings.contractStart}T00:00:00`);
+  }
+  return getEarliestEntryDate();
+}
+
+function getTrackingStartMonthKey() {
+  const date = getTrackingStartDate();
+  return date ? getMonthKeyForDate(date) : null;
+}
+
+function getTrackingEndDate() {
+  return settings.contractEnd ? new Date(`${settings.contractEnd}T23:59:59`) : null;
+}
+
+// Deficit/surplus hours accumulated over every fully completed month since
+// tracking began (see getTrackingStartMonthKey), so a light month raises a
+// later month's target (and a strong month lowers it) until it's worked off.
+function getMonthCarryOverHours(monthKey) {
+  const earliestKey = getTrackingStartMonthKey();
+  if (!earliestKey || monthKey <= earliestKey) {
+    return 0;
+  }
+
+  const baseTarget = getMonthlyTargetHours();
+  let carryOverHours = 0;
+  let cursor = monthKeyToDate(monthKey);
+  cursor.setMonth(cursor.getMonth() - 1);
+
+  while (getMonthKeyForDate(cursor) >= earliestKey) {
+    carryOverHours += getMinutesForMonth(getMonthKeyForDate(cursor)) / 60 - baseTarget;
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+
+  return carryOverHours;
+}
+
+function getAdjustedMonthlyTargetHours(monthKey) {
+  const trackingEndDate = getTrackingEndDate();
+  if (trackingEndDate && monthKey > getMonthKeyForDate(trackingEndDate)) {
+    return 0;
+  }
+  return Math.max(0, getMonthlyTargetHours() - getMonthCarryOverHours(monthKey));
+}
+
+function getWeekStart(referenceDate = new Date()) {
+  const date = new Date(referenceDate);
+  date.setHours(0, 0, 0, 0);
+  const day = date.getDay();
+  const diffToMonday = (day + 6) % 7;
+  date.setDate(date.getDate() - diffToMonday);
+  return date;
+}
+
+function isDateWithinContract(date) {
+  const start = getTrackingStartDate();
+  const end = getTrackingEndDate();
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
+
+// The first day of `monthKey` that's actually within the contract — usually the
+// 1st, but later if the contract started partway through this month.
+function getMonthContractStart(monthKey) {
+  const monthStart = monthKeyToDate(monthKey);
+  const trackingStart = getTrackingStartDate();
+  return trackingStart && trackingStart > monthStart ? trackingStart : monthStart;
+}
+
+// Flat daily target for a given month: that month's carry-over-adjusted target
+// spread evenly across its calendar days.
+function getMonthDailyRate(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return getAdjustedMonthlyTargetHours(monthKey) / getDaysInMonth(year, month);
+}
+
+// Deficit/surplus accumulated so far *within* monthKey, from the first
+// contract day of that month up to (not including) `beforeDate` — the
+// day-exact version of "how far ahead/behind pace am I this month right now."
+function getMonthCarryOverBeforeDate(monthKey, beforeDate) {
+  const rangeStart = getMonthContractStart(monthKey);
+  const dailyRate = getMonthDailyRate(monthKey);
+  const daysBefore = Math.max(0, Math.round((beforeDate.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)));
+  const expectedHours = dailyRate * daysBefore;
+
+  const startMs = rangeStart.getTime();
+  const endMs = beforeDate.getTime();
+  const actualMinutes = entries.reduce((sum, entry) => {
+    const ms = new Date(`${entry.date}T00:00:00`).getTime();
+    return ms >= startMs && ms < endMs ? sum + calculateEntryMinutes(entry) : sum;
+  }, 0);
+
+  return actualMinutes / 60 - expectedHours;
+}
+
+// Splits a Mon-Sun week into contiguous per-month segments, clipped to the
+// contract period — e.g. a week with a Wednesday month-change becomes a
+// 2-day segment in the old month and a 5-day segment in the new one, and a
+// week at the very start/end of the contract loses its out-of-contract days.
+function getWeekSegments(weekStart) {
+  const segments = [];
+
+  for (let i = 0; i < 7; i += 1) {
+    const day = new Date(weekStart);
+    day.setDate(day.getDate() + i);
+    if (!isDateWithinContract(day)) continue;
+
+    const monthKey = getMonthKeyForDate(day);
+    const last = segments[segments.length - 1];
+    if (last && last.monthKey === monthKey) {
+      last.days += 1;
+    } else {
+      segments.push({ monthKey, start: day, days: 1 });
+    }
+  }
+
+  return segments;
+}
+
+function getWeekMinutes(weekStart) {
+  const startMs = weekStart.getTime();
+  const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
+
+  return entries.reduce((sum, entry) => {
+    const ms = new Date(`${entry.date}T00:00:00`).getTime();
+    if (ms >= startMs && ms < endMs) {
+      return sum + calculateEntryMinutes(entry);
+    }
+    return sum;
+  }, 0);
+}
+
+function getMonthKeyForDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+// Weekly target for the Mon-Sun week containing referenceDate. Still shown as
+// a single week, but under the hood it's built from one segment per month the
+// week touches — each segment uses that month's own daily rate and its own
+// carry-over from earlier in that month, so a mid-week month change (or the
+// contract's start/end) is accounted for exactly on the correct side of the
+// boundary instead of assigning the whole week to one month.
+function getWeekProgress(referenceDate = new Date()) {
+  const weekStart = getWeekStart(referenceDate);
+  const segments = getWeekSegments(weekStart);
+
+  let baseWeeklyTarget = 0;
+  let adjustedTargetHours = 0;
+  let carryOverHours = 0;
+
+  segments.forEach((segment) => {
+    const dailyRate = getMonthDailyRate(segment.monthKey);
+    const segmentTarget = dailyRate * segment.days;
+    const segmentCarryOver = getMonthCarryOverBeforeDate(segment.monthKey, segment.start);
+
+    baseWeeklyTarget += segmentTarget;
+    carryOverHours += segmentCarryOver;
+    adjustedTargetHours += Math.max(0, segmentTarget - segmentCarryOver);
+  });
+
+  const actualMinutes = getWeekMinutes(weekStart);
+  const actualHours = actualMinutes / 60;
+  const remainingHours = Math.max(0, adjustedTargetHours - actualHours);
+  const balanceHours = actualHours - adjustedTargetHours;
+
+  return { baseWeeklyTarget, adjustedTargetHours, actualHours, remainingHours, balanceHours, carryOverHours };
+}
+
+function getMonthProgress(referenceDate = new Date()) {
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth() + 1;
+  const monthKey = getMonthKeyForDate(referenceDate);
+  const daysInMonthCount = getDaysInMonth(year, month);
+  const dayOfMonth = referenceDate.getDate();
+
+  const targetHours = getAdjustedMonthlyTargetHours(monthKey);
+  const actualMinutes = getMinutesForMonth(monthKey);
+  const actualHours = actualMinutes / 60;
+  const remainingHours = Math.max(0, targetHours - actualHours);
+  const expectedByNowHours = targetHours * (dayOfMonth / daysInMonthCount);
+  const balanceHours = actualHours - expectedByNowHours;
+
+  return {
+    monthKey,
+    targetHours,
+    actualHours,
+    remainingHours,
+    balanceHours,
+    daysRemaining: daysInMonthCount - dayOfMonth,
+    daysInMonthCount,
+  };
 }
 
 function renderCharts() {
   const container = document.querySelector('#statistics-tab-panel');
   if (!container) return;
 
-  const months = getRecentMonthKeys(6);
-  const timeData = months.map((monthKey) => ({
-    month: monthKey,
-    label: formatShortMonth(monthKey),
-    minutes: getMinutesForMonth(monthKey),
-  }));
-  const payData = months.map((monthKey) => ({
-    month: monthKey,
-    label: formatShortMonth(monthKey),
-    pay: getMonthPay(monthKey),
-  }));
+  // Only chart periods within the employment period (contract start/end, or
+  // the first logged entry as a fallback) — everything else has no data and
+  // would otherwise show as a hollow "missed target" bar.
+  const trackingStartDate = getTrackingStartDate();
+  const earliestWeekStart = trackingStartDate ? getWeekStart(trackingStartDate) : null;
+  const earliestMonthKey = getTrackingStartMonthKey();
+  const trackingEndDate = getTrackingEndDate();
+  const latestMonthKey = trackingEndDate ? getMonthKeyForDate(trackingEndDate) : null;
 
-  // Find best and worst months
-  const bestWorkMonth = timeData.reduce((best, current) => 
-    current.minutes > best.minutes ? current : best, timeData[0] || {});
-  const worstWorkMonth = timeData.reduce((worst, current) => 
-    current.minutes < worst.minutes ? current : worst, timeData[0] || {});
-  const bestPayMonth = payData.reduce((best, current) => 
-    current.pay > best.pay ? current : best, payData[0] || {});
-  const lowestPayMonth = payData.reduce((lowest, current) => 
-    current.pay < lowest.pay ? current : lowest, payData[0] || {});
+  const weekData = getRecentWeekStarts(8)
+    .filter((weekStart) => !earliestWeekStart || weekStart >= earliestWeekStart)
+    .filter((weekStart) => !trackingEndDate || weekStart <= trackingEndDate)
+    .map((weekStart) => {
+      const progress = getWeekProgress(weekStart);
+      return {
+        label: formatShortDate(weekStart),
+        soll: progress.adjustedTargetHours,
+        ist: progress.actualHours,
+        balance: progress.balanceHours,
+      };
+    });
+
+  const monthData = getRecentMonthKeys(6)
+    .filter((monthKey) => !earliestMonthKey || monthKey >= earliestMonthKey)
+    .filter((monthKey) => !latestMonthKey || monthKey <= latestMonthKey)
+    .map((monthKey) => {
+      const soll = getAdjustedMonthlyTargetHours(monthKey);
+      const ist = getMinutesForMonth(monthKey) / 60;
+      return { label: formatShortMonth(monthKey), soll, ist, balance: ist - soll };
+    });
+
+  const bestWeek = weekData.reduce((best, cur) => (cur.balance > best.balance ? cur : best), weekData[0] || {});
+  const worstWeek = weekData.reduce((worst, cur) => (cur.balance < worst.balance ? cur : worst), weekData[0] || {});
+  const bestMonth = monthData.reduce((best, cur) => (cur.balance > best.balance ? cur : best), monthData[0] || {});
+  const worstMonth = monthData.reduce((worst, cur) => (cur.balance < worst.balance ? cur : worst), monthData[0] || {});
 
   // Get existing chart container or create new one
   let chartLayout = container.querySelector('.chart-layout');
@@ -497,26 +894,34 @@ function renderCharts() {
 
   chartLayout.innerHTML = `
     <div class="chart-card">
-      <h3>Arbeitszeit Übersicht</h3>
-      <div id="time-chart" class="line-chart" aria-label="Arbeitszeit pro Monat"></div>
+      <h3>Wochen-Statistik</h3>
+      <div id="week-chart" class="comparison-chart" aria-label="Soll- und Ist-Stunden pro Woche"></div>
+      <div class="chart-legend">
+        <span><i class="legend-swatch legend-soll"></i>Soll</span>
+        <span><i class="legend-swatch legend-ist"></i>Ist</span>
+      </div>
       <div class="chart-stats">
-        <p>💪 Meiste Arbeit: ${bestWorkMonth.label || 'Keine Daten'} (${formatHours(bestWorkMonth.minutes || 0)})</p>
-        <p>📉 Wenigste Arbeit: ${worstWorkMonth.label || 'Keine Daten'} (${formatHours(worstWorkMonth.minutes || 0)})</p>
+        <p>💪 Beste Woche: ${bestWeek.label || 'Keine Daten'} (${formatSignedHours(bestWeek.balance || 0)})</p>
+        <p>📉 Schwächste Woche: ${worstWeek.label || 'Keine Daten'} (${formatSignedHours(worstWeek.balance || 0)})</p>
       </div>
     </div>
 
     <div class="chart-card">
-      <h3>Lohn Übersicht</h3>
-      <div id="pay-chart" class="line-chart" aria-label="Lohn pro Monat"></div>
+      <h3>Monats-Statistik</h3>
+      <div id="month-chart" class="comparison-chart" aria-label="Soll- und Ist-Stunden pro Monat"></div>
+      <div class="chart-legend">
+        <span><i class="legend-swatch legend-soll"></i>Soll</span>
+        <span><i class="legend-swatch legend-ist"></i>Ist</span>
+      </div>
       <div class="chart-stats">
-        <p>💰 Höchster Lohn: ${bestPayMonth.label || 'Keine Daten'} (${formatMoney(bestPayMonth.pay || 0)})</p>
-        <p>📊 Niedrigster Lohn: ${lowestPayMonth.label || 'Keine Daten'} (${formatMoney(lowestPayMonth.pay || 0)})</p>
+        <p>💪 Bester Monat: ${bestMonth.label || 'Keine Daten'} (${formatSignedHours(bestMonth.balance || 0)})</p>
+        <p>📉 Schwächster Monat: ${worstMonth.label || 'Keine Daten'} (${formatSignedHours(worstMonth.balance || 0)})</p>
       </div>
     </div>
   `;
 
-  renderLineChart('time-chart', timeData, (value) => formatHours(value));
-  renderLineChart('pay-chart', payData.map(d => ({ ...d, value: d.pay })), (value) => formatMoney(value));
+  renderComparisonChart('week-chart', weekData, (value) => formatHoursFromDecimal(value));
+  renderComparisonChart('month-chart', monthData, (value) => formatHoursFromDecimal(value));
 }
 
 function renderEntries() {
@@ -540,50 +945,13 @@ function renderEntries() {
     const pay = calculateEntryPay(entry, minutes);
     const startTime = normalizeTimeValue(entry.start);
     const endTime = normalizeTimeValue(entry.end);
-    const paidCheckbox = fragment.querySelector('.paid-toggle');
 
     item.dataset.id = entry.id;
-    item.classList.toggle('paid', entry.paid);
     fragment.querySelector('.entry-date').textContent = formatDate(entry.date);
     fragment.querySelector('.entry-times').textContent = `${startTime || '00:00'} – ${endTime || '00:00'}`;
     fragment.querySelector('.entry-task').textContent = entry.task || 'Keine Tätigkeit';
     fragment.querySelector('.entry-hours').textContent = formatHours(minutes);
     fragment.querySelector('.entry-pay').textContent = formatMoney(pay);
-
-    if (paidCheckbox) {
-      paidCheckbox.checked = entry.paid;
-      paidCheckbox.addEventListener('change', async (event) => {
-        const newPaidStatus = event.target.checked;
-        
-        try {
-          if (supabaseClient) {
-            // Update in Supabase first
-            const { error } = await supabaseClient
-              .from('arbeitsstunden')
-              .update({ bezahlt: newPaidStatus })
-              .eq('id', entry.id);
-            
-            if (error) {
-              throw error;
-            }
-
-            entry.paid = newPaidStatus;
-            saveEntries();
-            setSyncStatus('Bezahl-Status in Supabase aktualisiert.');
-          } else {
-            // Fallback if Supabase is not available
-            entry.paid = newPaidStatus;
-            saveEntries();
-            setSyncStatus('Bezahl-Status lokal aktualisiert (offline).');
-          }
-        } catch (error) {
-          console.error('Failed to update paid status:', error);
-          // Revert checkbox on error
-          event.target.checked = !newPaidStatus;
-          setSyncStatus(`Fehler beim Aktualisieren: ${error.message}`);
-        }
-      });
-    }
 
     // Add edit button handler
     const editBtn = fragment.querySelector('.edit-btn');
@@ -597,129 +965,92 @@ function renderEntries() {
   });
 }
 
-function renderLineChart(containerId, data, formatter) {
+// Grouped-bar chart comparing a target ("Soll") against the actual ("Ist") value
+// for each period, so a shortfall or surplus against the hours target is visible at a glance.
+function renderComparisonChart(containerId, items, formatter) {
   const container = document.querySelector(`#${containerId}`);
-  if (!container || !data.length) {
+  if (!container) {
     return;
   }
 
-  const values = data.map((item) => item.value || item.minutes || 0);
-  const maxValue = Math.max(...values, 1);
-  const minValue = 0;
+  if (!items.length) {
+    container.innerHTML = '<p class="chart-empty">Noch keine Daten für diesen Zeitraum.</p>';
+    return;
+  }
 
-  const chartHeight = 200;
-  const chartWidth = 100;
-  const barWidth = Math.max(4, chartWidth / data.length);
-  const padding = 40;
+  const maxValue = Math.max(...items.flatMap((item) => [item.soll, item.ist]), 1);
+  const chartHeight = 180;
+  const slotWidth = 60;
+  const barWidth = 16;
+  const barGap = 6;
+  const padding = 32;
+  const chartWidth = items.length * slotWidth;
+  const totalWidth = chartWidth + padding * 2;
+  const totalHeight = chartHeight + padding * 2;
 
-  // Create SVG
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${chartWidth * 8 + padding * 2} ${chartHeight + padding * 2}`);
-  svg.setAttribute('class', 'line-chart-svg');
+  svg.setAttribute('viewBox', `0 0 ${totalWidth} ${totalHeight}`);
+  // Explicit width/height give the SVG a real intrinsic size (matching the
+  // actual number of bars) instead of being stretched to fill the container
+  // width — without this, a chart with only one or two bars renders far too
+  // tall once its narrow aspect ratio is scaled up to the panel's full width.
+  svg.setAttribute('width', totalWidth);
+  svg.setAttribute('height', totalHeight);
+  svg.setAttribute('class', 'comparison-chart-svg');
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
-  // Draw grid lines
   const gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   gridGroup.setAttribute('class', 'grid-lines');
   for (let i = 0; i <= 4; i += 1) {
-    const y = padding + ((chartHeight / 4) * i);
+    const y = padding + (chartHeight / 4) * i;
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', padding);
     line.setAttribute('y1', y);
-    line.setAttribute('x2', chartWidth * 8 + padding);
+    line.setAttribute('x2', chartWidth + padding);
     line.setAttribute('y2', y);
-    line.setAttribute('stroke', '#e0e0e0');
-    line.setAttribute('stroke-width', '1');
     gridGroup.appendChild(line);
   }
   svg.appendChild(gridGroup);
 
-  // Draw axes
-  const axisGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  axisGroup.setAttribute('class', 'axes');
-  const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-  xAxis.setAttribute('x1', padding);
-  xAxis.setAttribute('y1', padding + chartHeight);
-  xAxis.setAttribute('x2', chartWidth * 8 + padding);
-  xAxis.setAttribute('y2', padding + chartHeight);
-  xAxis.setAttribute('stroke', '#333');
-  xAxis.setAttribute('stroke-width', '2');
-  axisGroup.appendChild(xAxis);
+  items.forEach((item, index) => {
+    const centerX = padding + index * slotWidth + slotWidth / 2;
+    const sollHeight = (item.soll / maxValue) * chartHeight;
+    const istHeight = (item.ist / maxValue) * chartHeight;
+    const sollX = centerX - barGap / 2 - barWidth;
+    const istX = centerX + barGap / 2;
 
-  const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-  yAxis.setAttribute('x1', padding);
-  yAxis.setAttribute('y1', padding);
-  yAxis.setAttribute('x2', padding);
-  yAxis.setAttribute('y2', padding + chartHeight);
-  yAxis.setAttribute('stroke', '#333');
-  yAxis.setAttribute('stroke-width', '2');
-  axisGroup.appendChild(yAxis);
-  svg.appendChild(axisGroup);
+    const sollRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    sollRect.setAttribute('x', sollX);
+    sollRect.setAttribute('y', padding + chartHeight - sollHeight);
+    sollRect.setAttribute('width', barWidth);
+    sollRect.setAttribute('height', Math.max(0, sollHeight));
+    sollRect.setAttribute('rx', 3);
+    sollRect.setAttribute('class', 'bar-soll');
+    const sollTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    sollTitle.textContent = `${item.label} – Soll: ${formatter(item.soll)}`;
+    sollRect.appendChild(sollTitle);
+    svg.appendChild(sollRect);
 
-  // Draw line and points
-  const lineGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  lineGroup.setAttribute('class', 'line-data');
-  let pathData = '';
+    const istRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    istRect.setAttribute('x', istX);
+    istRect.setAttribute('y', padding + chartHeight - istHeight);
+    istRect.setAttribute('width', barWidth);
+    istRect.setAttribute('height', Math.max(0, istHeight));
+    istRect.setAttribute('rx', 3);
+    istRect.setAttribute('class', item.ist >= item.soll ? 'bar-ist bar-ist-ahead' : 'bar-ist bar-ist-behind');
+    const istTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    istTitle.textContent = `${item.label} – Ist: ${formatter(item.ist)}`;
+    istRect.appendChild(istTitle);
+    svg.appendChild(istRect);
 
-  const pointsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  pointsGroup.setAttribute('class', 'points');
-
-  data.forEach((item, index) => {
-    const value = item.value || item.minutes || 0;
-    const x = padding + (index * chartWidth * 8) / data.length + (chartWidth * 8) / (data.length * 2);
-    const y = padding + chartHeight - ((value / maxValue) * chartHeight);
-
-    if (index === 0) {
-      pathData = `M ${x} ${y}`;
-    } else {
-      pathData += ` L ${x} ${y}`;
-    }
-
-    // Add point
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', x);
-    circle.setAttribute('cy', y);
-    circle.setAttribute('r', '3');
-    circle.setAttribute('fill', '#3563e9');
-    circle.setAttribute('class', 'data-point');
-
-    // Add tooltip
-    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-    title.textContent = `${item.label}: ${formatter(value)}`;
-    circle.appendChild(title);
-
-    pointsGroup.appendChild(circle);
-
-    // Add label
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', x);
-    label.setAttribute('y', padding + chartHeight + 20);
+    label.setAttribute('x', centerX);
+    label.setAttribute('y', padding + chartHeight + 18);
     label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('font-size', '12');
-    label.setAttribute('fill', '#666');
+    label.setAttribute('class', 'chart-axis-label');
     label.textContent = item.label;
     svg.appendChild(label);
-
-    // Add value label
-    const valueLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    valueLabel.setAttribute('x', x);
-    valueLabel.setAttribute('y', y - 10);
-    valueLabel.setAttribute('text-anchor', 'middle');
-    valueLabel.setAttribute('font-size', '11');
-    valueLabel.setAttribute('fill', '#3563e9');
-    valueLabel.setAttribute('font-weight', 'bold');
-    valueLabel.textContent = formatter(value);
-    svg.appendChild(valueLabel);
   });
-
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', pathData);
-  path.setAttribute('stroke', '#3563e9');
-  path.setAttribute('stroke-width', '2');
-  path.setAttribute('fill', 'none');
-  lineGroup.appendChild(path);
-  svg.appendChild(lineGroup);
-  svg.appendChild(pointsGroup);
 
   container.innerHTML = '';
   container.appendChild(svg);
@@ -737,13 +1068,6 @@ function getMonthKey(dateString) {
   return `${year}-${month}`;
 }
 
-function getCurrentMonthKey() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
 function getRecentMonthKeys(count = 6) {
   const today = new Date();
   const keys = [];
@@ -758,37 +1082,23 @@ function getRecentMonthKeys(count = 6) {
   return keys;
 }
 
+function getRecentWeekStarts(count = 8) {
+  const currentWeekStart = getWeekStart();
+  const starts = [];
+
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() - index * 7);
+    starts.push(date);
+  }
+
+  return starts;
+}
+
 function getMinutesForMonth(monthKey) {
   return entries
     .filter((entry) => getMonthKey(entry.date) === monthKey)
     .reduce((sum, entry) => sum + calculateEntryMinutes(entry), 0);
-}
-
-function getTotalPayForMonth(monthKey) {
-  return entries
-    .filter((entry) => getMonthKey(entry.date) === monthKey)
-    .reduce((sum, entry) => sum + calculateEntryPay(entry), 0);
-}
-
-function getCurrentWeekMinutes() {
-  const now = new Date();
-  const currentDay = now.getDay();
-  const diffToMonday = (currentDay + 6) % 7;
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(now.getDate() - diffToMonday);
-
-  const startMs = monday.getTime();
-  const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
-
-  return entries.reduce((sum, entry) => {
-    const date = new Date(`${entry.date}T00:00:00`);
-    const ms = date.getTime();
-    if (ms >= startMs && ms < endMs) {
-      return sum + calculateEntryMinutes(entry);
-    }
-    return sum;
-  }, 0);
 }
 
 function calculateEntryMinutes(entry) {
@@ -855,6 +1165,18 @@ function formatHours(totalMinutes) {
   return `${hours}h ${minutes}min`;
 }
 
+function formatHoursFromDecimal(hoursDecimal) {
+  return formatHours(Math.round(hoursDecimal * 60));
+}
+
+function formatSignedHours(hoursDecimal) {
+  if (Math.abs(hoursDecimal) < 1 / 60) {
+    return '±0min';
+  }
+  const sign = hoursDecimal > 0 ? '+' : '−';
+  return `${sign}${formatHoursFromDecimal(Math.abs(hoursDecimal))}`;
+}
+
 function formatMoney(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
 }
@@ -879,6 +1201,10 @@ function formatShortMonth(monthKey) {
   return date.toLocaleDateString('de-DE', { month: 'short' });
 }
 
+function formatShortDate(date) {
+  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+}
+
 function mapEntryToRow(entry) {
   return {
     id: entry.id,
@@ -888,7 +1214,6 @@ function mapEntryToRow(entry) {
     pause_minuten: Number(entry.breakMinutes || 0),
     taetigkeit: entry.task || '',
     stunden_lohn: Number(entry.hourlyRate || 0),
-    bezahlt: entry.paid || false,
   };
 }
 
@@ -900,13 +1225,12 @@ function mapRowToEntry(row) {
     end: normalizeTimeValue(row.aufgehört),
     breakMinutes: Number(row.pause_minuten || 0),
     task: row.taetigkeit || '',
-    hourlyRate: Number(row.stunden_lohn || 13.9),
-    paid: row.bezahlt || false,
+    hourlyRate: Number(row.stunden_lohn || settings.hourlyWage),
   };
 }
 
 function toCsv(rows) {
-  const header = ['Datum', 'Angefangen', 'Aufgehört', 'Stunden(Ohne Pause)', 'Tätigkeit', 'Stunden Lohn', 'Tages Lohn', 'Bezahlt', 'Summe'];
+  const header = ['Datum', 'Angefangen', 'Aufgehört', 'Stunden(Ohne Pause)', 'Tätigkeit', 'Stunden Lohn', 'Tages Lohn'];
   const lines = [header.join(',')];
 
   rows.forEach((row) => {
@@ -920,8 +1244,6 @@ function toCsv(rows) {
       escapeCsv(row.task || ''),
       Number(row.hourlyRate || 0),
       pay,
-      row.paid ? 'ja' : 'nein',
-      '',
     ];
     lines.push(csvRow.join(','));
   });
@@ -975,8 +1297,7 @@ function parseCsv(text) {
     const end = map.aufgehoert || map.end || '';
     const breakMinutes = Number(map.pause || map.break_minutes || 0);
     const task = map.taetigkeit || map.task || map.notiz || map.note || '';
-    const hourlyRate = Number(map.stundenlohn || map.hourlyrate || map.hourly_rate || 13.9);
-    const paid = String(map.bezahlt || map.paid || '').toLowerCase();
+    const hourlyRate = Number(map.stundenlohn || map.hourlyrate || map.hourly_rate || settings.hourlyWage);
 
     if (!date || !start || !end) {
       return null;
@@ -989,8 +1310,7 @@ function parseCsv(text) {
       end,
       breakMinutes: Number.isFinite(breakMinutes) ? breakMinutes : 0,
       task,
-      hourlyRate: Number.isFinite(hourlyRate) ? hourlyRate : 13.9,
-      paid: paid === 'true' || paid === '1' || paid === 'ja' || paid === 'yes',
+      hourlyRate: Number.isFinite(hourlyRate) ? hourlyRate : settings.hourlyWage,
     };
   }).filter(Boolean);
 }
@@ -1044,42 +1364,16 @@ function escapeCsv(value) {
   return stringValue;
 }
 
-function getCurrentWeekPay() {
-  const now = new Date();
-  const currentDay = now.getDay();
-  const diffToMonday = (currentDay + 6) % 7;
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(now.getDate() - diffToMonday);
-
-  const startMs = monday.getTime();
-  const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
-
-  return entries.reduce((sum, entry) => {
-    const date = new Date(`${entry.date}T00:00:00`);
-    const ms = date.getTime();
-    if (ms >= startMs && ms < endMs) {
-      const minutes = calculateEntryMinutes(entry);
-      return sum + calculateEntryPay(entry, minutes);
-    }
-    return sum;
-  }, 0);
-}
-
-function getMonthPay(monthKey) {
-  return entries
-    .filter((entry) => getMonthKey(entry.date) === monthKey)
-    .reduce((sum, entry) => {
-      const minutes = calculateEntryMinutes(entry);
-      return sum + calculateEntryPay(entry, minutes);
-    }, 0);
+// "Gesamt"-Lohn zählt nur abgeschlossene Monate: der laufende Monat läuft noch
+// und sein Stand steht schon in den Wochen-/Monats-Zielkarten. Die "Gesamt
+// Stunden" daneben zählen dagegen live mit (siehe renderSummary).
+function getCompletedEntries() {
+  const currentMonthKey = getMonthKeyForDate(new Date());
+  return entries.filter((entry) => getMonthKey(entry.date) !== currentMonthKey);
 }
 
 function getTotalPay() {
-  return entries.reduce((sum, entry) => {
-    const minutes = calculateEntryMinutes(entry);
-    return sum + calculateEntryPay(entry, minutes);
-  }, 0);
+  return getCompletedEntries().reduce((sum, entry) => sum + calculateEntryPay(entry), 0);
 }
 
 // Edit Modal Functions
@@ -1090,7 +1384,7 @@ function openEditModal(entry) {
   editEndInput.value = entry.end;
   editBreakInput.value = entry.breakMinutes || 0;
   editTaskInput.value = entry.task || '';
-  editHourlyRateInput.value = entry.hourlyRate || 13.9;
+  editHourlyRateInput.value = entry.hourlyRate || settings.hourlyWage;
   
   editModal.classList.remove('hidden');
 }
